@@ -62,6 +62,8 @@ float v_body_measured=0,w_body_measured=0;
 // BNO08x setup
 Adafruit_BNO08x bno08x;
 sh2_SensorValue_t sensorValue;
+float qx0 = 0, qy0 = 0, qz0 = 0, qw0 = 1;
+bool firstQuat = true;
 
 unsigned long last_time_us = 0.0;
 
@@ -99,7 +101,8 @@ void setup() {
   // BNO08x IMU initialization
   if (!bno08x.begin_I2C()) {
     Serial.println("BNO08x not detected!");
-    while (1);
+    //while (1);
+    delay(100);
   }
 
   bno08x.enableReport(SH2_GYROSCOPE_CALIBRATED);
@@ -107,6 +110,32 @@ void setup() {
   bno08x.enableReport(SH2_ROTATION_VECTOR);
 
   last_time_us = micros();
+}
+
+void correctYawToZero(float &qx, float &qy, float &qz, float &qw) {
+  if (firstQuat) {
+    qx0 = qx;
+    qy0 = qy;
+    qz0 = qz;
+    qw0 = qw;
+    firstQuat = false;
+  }
+  // Inverse of initial quaternion
+  float norm = sqrt(qx0*qx0 + qy0*qy0 + qz0*qz0 + qw0*qw0);
+  float qxi = -qx0 / norm;
+  float qyi = -qy0 / norm;
+  float qzi = -qz0 / norm;
+  float qwi =  qw0 / norm;
+
+  float new_qx = qwi * qx + qxi * qw + qyi * qz - qzi * qy;
+  float new_qy = qwi * qy - qxi * qz + qyi * qw + qzi * qx;
+  float new_qz = qwi * qz + qxi * qy - qyi * qx + qzi * qw;
+  float new_qw = qwi * qw - qxi * qx - qyi * qy - qzi * qz;
+
+  qx = new_qx;
+  qy = new_qy;
+  qz = new_qz;
+  qw = new_qw;
 }
 
 void loop() {
@@ -296,6 +325,7 @@ void loop() {
         qx = sensorValue.un.rotationVector.i;
         qy = sensorValue.un.rotationVector.j;
         qz = sensorValue.un.rotationVector.k;
+        correctYawToZero(qx, qy, qz, qw);
         break;
       case SH2_GYROSCOPE_CALIBRATED:
         wx = sensorValue.un.gyroscope.x;
@@ -309,6 +339,7 @@ void loop() {
         break;
     }
     sendIMU(qx, qy, qz, qw, wx, wy, wz, ax, ay, az);
+  
   }
 
   // Convert velocity to PWM
